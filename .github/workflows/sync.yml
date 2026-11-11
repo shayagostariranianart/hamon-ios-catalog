@@ -1,0 +1,43 @@
+name: Sync iTunes iOS catalog
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    paths:
+      - "scripts/sync_appstore.py"
+      - ".github/workflows/sync.yml"
+permissions:
+  contents: write
+concurrency:
+  group: hamon-itunes-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch iTunes catalog (repo catalog and/or push to Hamon Film)
+        env:
+          HAMON_IMPORT_URL: ${{ secrets.HAMON_IMPORT_URL }}
+          HAMON_IMPORT_TOKEN: ${{ secrets.HAMON_IMPORT_TOKEN }}
+          SYNC_MODE: ${{ vars.SYNC_MODE || 'auto' }}
+          REPO_MAX: ${{ vars.REPO_MAX || '300' }}
+          APPLE_COUNTRY: ${{ vars.APPLE_COUNTRY || 'us' }}
+          APPLE_TERMS: ${{ vars.APPLE_TERMS }}
+          MAX_NEW_PER_RUN: ${{ vars.MAX_NEW_PER_RUN || '30' }}
+          SHOTS_PER_APP: ${{ vars.SHOTS_PER_APP || '5' }}
+          FREE_ONLY: ${{ vars.FREE_ONLY || '' }}
+        run: python scripts/sync_appstore.py
+      - name: Commit catalog when changed
+        if: ${{ !cancelled() }}
+        run: |
+          [ -d catalog ] || { echo "No catalog directory; nothing to commit."; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A catalog
+          git diff --cached --quiet || (git commit -m "Refresh iOS catalog" && git push)
